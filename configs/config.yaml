@@ -1,0 +1,78 @@
+# All hyperparameters for stock-vol-predictor.
+# No magic numbers in code; everything the pipeline needs is here.
+
+seed: 42 # reproducibility: seeds numpy + tensorflow
+
+data:
+  tickers: [SPY, AAPL, MSFT, GOOGL]
+  start: "2015-01-01"
+  end: "2024-12-31"
+  vix_symbol: "^VIX" # CBOE VIX, fetched as an extra feature
+  raw_dir: "data/raw"
+  processed_dir: "data/processed"
+
+target:
+  horizon: 5 # predict 5-day-forward realized vol
+  annualization: 252 # trading days/year -> annualize std via sqrt252
+
+features:
+  rv_window: [5, 21, 63] # short / medium / long realized-vol lags (HAR components)
+  volume_zscore_window: 21
+  rsi_period: 14
+  bb_period: 20
+  bb_std: 2.0
+  # Fixed feature order fed into the models. Order MUST stay stable
+  # between training and inference, or the scaler/weights misalign.
+  columns:
+  - log_returns
+  - rv_5d
+  - rv_21d
+  - rv_63d
+  - volume_zscore
+  - rsi_14
+  - bb_width
+  - vix
+
+windowing:
+  seq_len: 60 # ~3 months of trading days per input sequence
+
+walk_forward:
+  min_train_years: 3 # never train on < 3 years
+  step_months: 6 # slide the fold boundary 6 months each step
+  test_months: 6 # each test fold spans 6 months
+  final_holdout_months: 12 # last 12 months: untouched until the very end
+
+training:
+  batch_size: 64
+  epochs: 100 # upper bound; early stopping ends it sooner
+  shuffle: false # NEVER shuffle time series
+  learning_rate: 0.001 # Adam initial LR (architecture.md: Adam lr=1e-3)
+  loss: huber # robust to vol spikes vs. MSE
+  huber_delta: 1.0 # transition point between L2 and L1 regions
+  early_stopping_patience: 10
+  reduce_lr_patience: 5
+  reduce_lr_factor: 0.5
+  monitor: val_loss # metric watched by early stopping + reduce-on-plateau
+
+lstm:
+  units: [128, 64] # two stacked LSTM layers (return_sequences=True then False)
+  dropout: 0.2 # applied after each LSTM layer
+  dense_units: 32 # penultimate Dense(relu) before the linear output
+
+transformer:
+  d_model: 64 # linear projection width before positional encoding
+  num_blocks: 4 # stacked TransformerEncoderBlocks
+  num_heads: 4 # MultiHeadAttention heads
+  ff_dim: 128 # feed-forward hidden width inside each block
+  dropout: 0.1 # attention + FFN dropout
+  dense_units: 32 # penultimate Dense(relu) before the linear output
+
+evaluation:
+  qlikes_eps: 1.0e-8 # floor on RV_pred to keep QLIKE/log finite
+  baselines:
+    hist_vol_window: 21 # rolling-std baseline (Historical vol 21d)
+    har_rv_lags: [1, 5, 22] # HAR-RV daily / weekly / monthly lags (Corsi 2009)
+    # Naive random-walk baseline needs no parameters (RV_t -> RV_{t+1})
+
+  
+  
