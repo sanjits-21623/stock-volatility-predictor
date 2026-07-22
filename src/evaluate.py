@@ -49,6 +49,22 @@ def holdout_ticker_index(
         labels.append(np.full(int(is_test.sum()), ticker))
     return np.concatenate(labels)
 
+def holdout_dates(
+    data: dict[str, dict[str, np.ndarray]],
+    holdout_start: pd.Timestamp,
+    test_end: pd.Timestamp,
+    seq_len: int,
+) -> np.ndarray:
+    """Per-row holdout dates, aligned to make_fold_data's y_test / holdout_ticker_index."""
+    ts_start, ts_end = np.datetime64(holdout_start), np.datetime64(test_end)
+    out: list[np.ndarray] = []
+    for d in data.values():
+        label_dates = d["dates"][seq_len - 1:]
+        is_test = (label_dates >= ts_start) & (label_dates < ts_end)
+        out.append(pd.to_datetime(label_dates[is_test]))
+    return np.concatenate(out)
+
+
 def baseline_preds(
     data: dict[str, dict[str, np.ndarray]],
     holdout_start: pd.Timestamp,
